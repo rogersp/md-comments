@@ -417,6 +417,9 @@ export class CommentPreviewPanel {
     const navigationScriptUri = this.panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'media', 'navigation.js')
     );
+    const outlineScriptUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'outline.js')
+    );
     const mdPath = this.mdUri.fsPath;
     // Relative src values resolve next to the document. Links are unaffected: navigation.js
     // reads the raw href attribute, and every script and stylesheet URL here is absolute.
@@ -454,6 +457,7 @@ export class CommentPreviewPanel {
   <script nonce="${nonce}" src="${scriptUri}"></script>
   <script nonce="${nonce}" src="${navModelScriptUri}"></script>
   <script nonce="${nonce}" src="${navigationScriptUri}"></script>
+  <script nonce="${nonce}" src="${outlineScriptUri}"></script>
 </body>
 </html>`;
   }

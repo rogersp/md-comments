@@ -46,3 +46,45 @@ describe('navModel.classifyHref', () => {
     expect(model.classifyHref('#')).toEqual({ kind: 'ignore' });
   });
 });
+
+describe('navModel.visibleOutline', () => {
+  const items = [
+    { level: 1, text: 'Title' },
+    { level: 2, text: 'Overview' },
+    { level: 3, text: 'Background' },
+    { level: 4, text: 'Deep detail' },
+  ];
+
+  it('limits by depth when there is no query', () => {
+    expect(model.visibleOutline(items, 2, '').map((i: any) => i.text)).toEqual([
+      'Title',
+      'Overview',
+    ]);
+    expect(model.visibleOutline(items, 6, '  ').length).toBe(4);
+  });
+
+  it('searches every level when there is a query', () => {
+    expect(model.visibleOutline(items, 2, 'DEEP').map((i: any) => i.text)).toEqual(['Deep detail']);
+  });
+});
+
+describe('navModel.countOpenThreadsBySection', () => {
+  it('counts a section with its subsections', () => {
+    // H1, H2, H3, H2. Threads sit under heading index 2 (twice) and 3, and before any heading.
+    expect(model.countOpenThreadsBySection([1, 2, 3, 2], [2, 2, 3, -1])).toEqual([3, 2, 2, 1]);
+  });
+
+  it('returns zeros when there are no threads', () => {
+    expect(model.countOpenThreadsBySection([2, 2], [])).toEqual([0, 0]);
+  });
+});
+
+describe('navModel.activeHeadingIndex', () => {
+  it('picks the last heading at or above the offset line', () => {
+    const tops = [0, 500, 1200];
+    expect(model.activeHeadingIndex(tops, 0, 40)).toBe(0);
+    expect(model.activeHeadingIndex(tops, 470, 40)).toBe(1);
+    expect(model.activeHeadingIndex(tops, 2000, 40)).toBe(2);
+    expect(model.activeHeadingIndex([100], 0, 40)).toBe(-1);
+  });
+});
