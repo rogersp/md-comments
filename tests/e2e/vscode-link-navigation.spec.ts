@@ -47,6 +47,16 @@ test.describe('Comment preview link navigation', () => {
     await expect(frame.locator('.md-comments-document h1')).toHaveText('Navigation fixture');
   });
 
+  test('a self link without a fragment scrolls to the top', async ({ vscode }) => {
+    const frame = await openNavigationPreview(vscode);
+    const link = frame.getByRole('link', { name: 'the top of this file' });
+    await link.scrollIntoViewIfNeeded();
+    expect(await scrollY(frame)).toBeGreaterThan(0);
+    await link.click();
+    await expect.poll(() => scrollY(frame)).toBe(0);
+    await expect(frame.locator('#md-comments-navbar [data-nav="back"]')).toBeEnabled();
+  });
+
   test('a relative link clicked before navigation is ready does nothing', async ({ vscode }) => {
     const frame = await openNavigationPreview(vscode);
     await frame.locator('body').evaluate(() => {
@@ -62,6 +72,25 @@ test.describe('Comment preview link navigation', () => {
       const w = window as any;
       w.mdCommentsNav = w.__savedNav;
     });
+  });
+
+  test('a scroll restore cancels the hold from an earlier jump', async ({ vscode }) => {
+    const frame = await openNavigationPreview(vscode);
+    await frame.getByRole('link', { name: 'Numbered section' }).click();
+    await expect(byId(frame, '510-sender-identities-and-signatures')).toBeInViewport();
+    // Back from outside the webview (Command Palette) brings no user input that would end the
+    // jump's hold, so stand in for the host's restore message, then reflow the document.
+    const y = await frame.locator('body').evaluate(async () => {
+      const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      window.postMessage({ type: 'navScrollTo', scrollTop: 0 }, '*');
+      await wait(50);
+      const filler = document.createElement('div');
+      filler.style.height = '2000px';
+      document.querySelector('.md-comments-document')!.appendChild(filler);
+      await wait(300);
+      return Math.round(window.scrollY);
+    });
+    expect(y).toBe(0);
   });
 
   test('a modifier click opens the linked file in a new panel', async ({ vscode }) => {

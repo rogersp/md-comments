@@ -64,7 +64,7 @@ Background filler paragraph 8. This text exists so the document is long enough t
 
 ## 5. Recommendation
 
-See also [the second scenario](./other.md#s2--second-scenario).
+See also [the second scenario](./other.md#s2--second-scenario) and [the top of this file](./index.md).
 
 Recommendation filler paragraph 1. This text exists so the document is long enough to scroll, because every navigation check needs a target that starts off-screen. It carries no meaning.
 

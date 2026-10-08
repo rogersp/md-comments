@@ -272,21 +272,35 @@ export class CommentPreviewPanel {
           this.history.push(this.here(msg.scrollTop));
           break;
         case 'nav-open-link':
-          await this.openLink(msg.href, !!msg.newPanel, msg.scrollTop);
+          if (typeof msg.href === 'string') {
+            await this.openLink(msg.href, !!msg.newPanel, msg.scrollTop);
+          }
           break;
+        // An entry whose file can no longer be opened is dropped, so the ones past it stay
+        // reachable.
         case 'nav-back': {
           const target = this.history.peekBack();
           const from = this.here(msg.scrollTop);
-          if (target && (await this.goTo(target))) {
+          if (!target) {
+            break;
+          }
+          if (await this.goTo(target)) {
             this.history.commitBack(from);
+          } else {
+            this.history.dropBack();
           }
           break;
         }
         case 'nav-forward': {
           const target = this.history.peekForward();
           const from = this.here(msg.scrollTop);
-          if (target && (await this.goTo(target))) {
+          if (!target) {
+            break;
+          }
+          if (await this.goTo(target)) {
             this.history.commitForward(from);
+          } else {
+            this.history.dropForward();
           }
           break;
         }
@@ -297,8 +311,10 @@ export class CommentPreviewPanel {
     }
   }
 
-  private here(scrollTop: number | undefined): NavLocation {
-    return { uri: this.mdUri.toString(), scrollTop: scrollTop ?? 0 };
+  // The value comes from the webview and ends up in an HTML attribute, so accept only a number.
+  private here(scrollTop: unknown): NavLocation {
+    const n = Number.isFinite(scrollTop) ? Math.round(scrollTop as number) : 0;
+    return { uri: this.mdUri.toString(), scrollTop: n };
   }
 
   private goTo(location: NavLocation): Promise<boolean> {
@@ -313,7 +329,7 @@ export class CommentPreviewPanel {
     });
   }
 
-  private async openLink(href: string, modifier: boolean, scrollTop?: number): Promise<void> {
+  private async openLink(href: string, modifier: boolean, scrollTop: unknown): Promise<void> {
     const root =
       vscode.workspace.getWorkspaceFolder(this.mdUri)?.uri ?? vscode.Uri.joinPath(this.mdUri, '..');
     const link = resolveLink(path.posix.relative(root.path, this.mdUri.path), href);
@@ -357,7 +373,10 @@ export class CommentPreviewPanel {
   // Renders `uri` in this panel. Returns false, after warning, when it cannot be opened.
   private async showDocument(uri: vscode.Uri, target: NavTarget): Promise<boolean> {
     if (uri.toString() === this.mdUri.toString()) {
-      void this.panel.webview.postMessage({ type: 'navScrollTo', ...target });
+      // A link to this file without a fragment goes to its top, as a browser would.
+      const scrollTo =
+        target.fragment === undefined && target.scrollTop === undefined ? { scrollTop: 0 } : target;
+      void this.panel.webview.postMessage({ type: 'navScrollTo', ...scrollTo });
       return true;
     }
     const doc = await this.openDocument(uri);

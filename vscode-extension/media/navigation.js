@@ -48,10 +48,11 @@
     window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - offset);
   }
 
-  // The sidebar and fonts can still be settling when a link is followed, which reflows the
-  // document and pushes the target away. Re-align on each reflow until the user scrolls.
+  // The sidebar, fonts and images can still be settling when a link is followed or a position
+  // is restored, which reflows the document and moves the target. Re-apply `align` on each
+  // reflow until the user scrolls. Only one hold runs at a time.
   let stopHolding = null;
-  function holdAlignment(el) {
+  function holdAlignment(align) {
     if (stopHolding) {
       stopHolding();
     }
@@ -59,9 +60,7 @@
       return;
     }
     const userEvents = ['wheel', 'keydown', 'pointerdown', 'touchstart'];
-    const observer = new ResizeObserver(function () {
-      alignTo(el);
-    });
+    const observer = new ResizeObserver(align);
     const timer = setTimeout(stop, 1500);
     function stop() {
       observer.disconnect();
@@ -80,7 +79,9 @@
 
   function scrollToElement(el) {
     alignTo(el);
-    holdAlignment(el);
+    holdAlignment(function () {
+      alignTo(el);
+    });
     el.classList.add('md-comments-nav-target');
     setTimeout(function () {
       el.classList.remove('md-comments-nav-target');
@@ -104,6 +105,11 @@
       scrollToElement(el);
     } else if (typeof scrollTop === 'number' && !isNaN(scrollTop)) {
       window.scrollTo(0, scrollTop);
+      holdAlignment(function () {
+        window.scrollTo(0, scrollTop);
+      });
+    } else if (stopHolding) {
+      stopHolding();
     }
   }
 

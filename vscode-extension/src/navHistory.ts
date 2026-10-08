@@ -49,4 +49,13 @@ export class NavHistory {
       this.back.push(current);
     }
   }
+
+  // For an entry that can no longer be shown, such as a deleted file.
+  dropBack(): void {
+    this.back.pop();
+  }
+
+  dropForward(): void {
+    this.forward.pop();
+  }
 }
