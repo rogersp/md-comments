@@ -105,7 +105,9 @@ describe('VS Code Markdown Preview FAB and Icon Parity', () => {
       currentDocument: { fsPath: readmePath, toString: () => readmePath },
     });
 
-    expect(output).toContain('<h1 class="md-comments-paragraph" data-md-paragraph-index="0"');
+    expect(output).toMatch(
+      /<h1 id="[^"]+" class="md-comments-paragraph" data-md-paragraph-index="0"/
+    );
     expect(output).toContain('<tr class="md-comments-paragraph" data-md-paragraph-index="');
     expect(output).toContain('data-md-anchor-hash="');
     expect(output).toContain('data-md-current-author-name=');

@@ -4,6 +4,7 @@ import { getAuthor, getAuthorDisplayName } from './author';
 import { collectAvatarLogins, warmGitHubAvatars } from './githubAvatars';
 import { collectGitHubLogins, warmGitHubDisplayNames } from './githubDisplayNames';
 import { extendMarkdownIt } from './markdownItPlugin';
+import { headingIdsPlugin } from './headingIds';
 import { readComments } from './commentStore';
 import { getOAuthToken } from './githubAuth';
 
@@ -31,6 +32,7 @@ export function getMarkdownEngine(): InstanceType<typeof MarkdownIt> {
         return `<pre><code class="hljs">${escaped}</code></pre>`;
       },
     });
+    engine.use(headingIdsPlugin);
     extendMarkdownIt(engine);
   }
   return engine;
