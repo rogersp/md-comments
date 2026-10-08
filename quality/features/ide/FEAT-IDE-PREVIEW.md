@@ -42,6 +42,7 @@ verifiedIn:
   - 'tests/e2e/vscode-search-drafts.spec.ts'
   - 'tests/e2e/vscode-codelens.spec.ts'
   - 'tests/e2e/vscode-real-repo-sequential-delete.spec.ts'
+  - 'tests/e2e/vscode-relative-images.spec.ts'
 invariants:
   - 'INV-XSS-SANITIZED'
   - 'INV-IN-PLACE-PREVIEW'
@@ -69,3 +70,5 @@ Hooks into the IDE's Markdown rendering pipeline to provide rich GitHub/VS Code 
 - Then comment cards and badges update in-place optimistically without document DOM reloading
 - When a user initiates comment or reply deletion
 - Then an in-webview confirmation modal prompts for confirmation and prevents resurrection via optimistic tombstones
+- Given a markdown document with relative images open in the comment preview
+- Then the images load from the workspace, also after the panel follows a link into another folder

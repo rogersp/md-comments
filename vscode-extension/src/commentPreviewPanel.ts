@@ -98,12 +98,7 @@ export class CommentPreviewPanel {
       VIEW_TYPE,
       titleFor(document.uri),
       column ?? vscode.ViewColumn.Beside,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        enableCommandUris: true,
-        localResourceRoots: [extensionUri],
-      }
+      { ...this.webviewOptions(document.uri), retainContextWhenHidden: true }
     );
 
     CommentPreviewPanel.panels.add(this);
@@ -276,6 +271,7 @@ export class CommentPreviewPanel {
     this.mdUri = uri;
     this.panel.title = titleFor(uri);
     const markdown = doc.getText();
+    this.panel.webview.options = this.webviewOptions(uri);
     this.setHtml(renderMarkdownInitialLoading(markdown, uri), markdown, target);
     void this.refresh(true);
     return true;
@@ -294,6 +290,17 @@ export class CommentPreviewPanel {
     void vscode.window.showWarningMessage(
       `Markdown Comments: cannot open ${vscode.workspace.asRelativePath(uri)}`
     );
+  }
+
+  // Workspace folders and the document's own folder, so relative images load as they do in
+  // VS Code's markdown preview. The document's folder covers a file outside any workspace.
+  private webviewOptions(uri: vscode.Uri): vscode.WebviewOptions {
+    const folders = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri);
+    return {
+      enableScripts: true,
+      enableCommandUris: true,
+      localResourceRoots: [this.extensionUri, ...folders, vscode.Uri.joinPath(uri, '..')],
+    };
   }
 
   private setHtml(bodyHtml: string, markdownContent: string, target: NavTarget = {}): void {
@@ -335,6 +342,9 @@ export class CommentPreviewPanel {
       vscode.Uri.joinPath(this.extensionUri, 'media', 'navigation.js')
     );
     const mdPath = this.mdUri.fsPath;
+    // Relative src values resolve next to the document. Links are unaffected: navigation.js
+    // reads the raw href attribute, and every script and stylesheet URL here is absolute.
+    const baseUri = this.panel.webview.asWebviewUri(this.mdUri);
 
     const themeKind = vscode.window.activeColorTheme.kind;
     const themeClass =
@@ -350,7 +360,8 @@ export class CommentPreviewPanel {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https://avatars.githubusercontent.com; style-src ${this.panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <base href="${escapeHtml(baseUri.toString())}">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https://avatars.githubusercontent.com ${this.panel.webview.cspSource}; style-src ${this.panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${cssUri}">
   <link rel="stylesheet" href="${mdCssUri}">
