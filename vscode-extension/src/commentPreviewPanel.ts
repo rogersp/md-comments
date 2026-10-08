@@ -27,6 +27,26 @@ function isNavMessage(msg: CommentActionMessage | NavMessage): msg is NavMessage
   return typeof msg?.action === 'string' && msg.action.startsWith('nav-');
 }
 
+// The panel's <base> makes a relative link clicked before navigation.js has loaded resolve to an
+// https: URL, which VS Code offers to open in a browser. Runs in <head> and swallows such clicks
+// until navigation.js is ready.
+const EARLY_LINK_GUARD = `(function () {
+  function guard(e) {
+    if (window.mdCommentsNav) {
+      return;
+    }
+    const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    const href = a ? a.getAttribute('href') : '';
+    const relative = !!href && href.charAt(0) !== '#' && href.indexOf('//') !== 0;
+    if (relative && !/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+  document.addEventListener('click', guard, true);
+  document.addEventListener('auxclick', guard, true);
+})();`;
+
 function titleFor(uri: vscode.Uri): string {
   return `Comments: ${vscode.workspace.asRelativePath(uri)}`;
 }
@@ -440,6 +460,7 @@ export class CommentPreviewPanel {
 <head>
   <meta charset="UTF-8">
   <base href="${escapeHtml(baseUri.toString())}">
+  <script nonce="${nonce}">${EARLY_LINK_GUARD}</script>
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https://avatars.githubusercontent.com ${this.panel.webview.cspSource}; style-src ${this.panel.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${cssUri}">

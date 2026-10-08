@@ -47,6 +47,23 @@ test.describe('Comment preview link navigation', () => {
     await expect(frame.locator('.md-comments-document h1')).toHaveText('Navigation fixture');
   });
 
+  test('a relative link clicked before navigation is ready does nothing', async ({ vscode }) => {
+    const frame = await openNavigationPreview(vscode);
+    await frame.locator('body').evaluate(() => {
+      const w = window as any;
+      w.__savedNav = w.mdCommentsNav;
+      delete w.mdCommentsNav;
+    });
+    await frame.getByRole('link', { name: 'Top of other file' }).click();
+    await vscode.page.waitForTimeout(1000);
+    await expect(frame.locator('.md-comments-document h1')).toHaveText('Navigation fixture');
+    await expect(vscode.page.locator('.monaco-dialog-box')).toHaveCount(0);
+    await frame.locator('body').evaluate(() => {
+      const w = window as any;
+      w.mdCommentsNav = w.__savedNav;
+    });
+  });
+
   test('a modifier click opens the linked file in a new panel', async ({ vscode }) => {
     const frame = await openNavigationPreview(vscode);
     await frame
