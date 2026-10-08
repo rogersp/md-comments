@@ -1,21 +1,44 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { executeCommentAction, type CommentActionMessage } from './commentActions';
 import { renderMarkdownWithComments, renderMarkdownInitialLoading } from './markdownRender';
 import { escapeHtml } from '../../shared/html';
 import { logDebug, logError } from './logger';
+import { isMarkdownPath, opensNewPanel, resolveLink } from './links';
 
 const VIEW_TYPE = 'mdComments.commentPreview';
 
+/** Where a freshly rendered document should open: at a fragment, or at a scroll offset. */
+export interface NavTarget {
+  fragment?: string;
+  scrollTop?: number;
+}
+
+/** Messages from navigation.js. They bypass the comment action queue. */
+type NavMessage = { action: 'nav-open-link'; href: string; newPanel?: boolean; scrollTop?: number };
+
+function isNavMessage(msg: CommentActionMessage | NavMessage): msg is NavMessage {
+  return typeof msg?.action === 'string' && msg.action.startsWith('nav-');
+}
+
+function titleFor(uri: vscode.Uri): string {
+  return `Comments: ${vscode.workspace.asRelativePath(uri)}`;
+}
+
 export class CommentPreviewPanel {
-  private static panels = new Map<string, CommentPreviewPanel>();
+  private static panels = new Set<CommentPreviewPanel>();
+
+  private static forUri(uri: vscode.Uri): CommentPreviewPanel[] {
+    const key = uri.toString();
+    return [...CommentPreviewPanel.panels].filter((p) => p.mdUri.toString() === key);
+  }
 
   static show(
     extensionUri: vscode.Uri,
     document: vscode.TextDocument,
     column?: vscode.ViewColumn
   ): void {
-    const key = document.uri.toString();
-    const existing = CommentPreviewPanel.panels.get(key);
+    const existing = CommentPreviewPanel.forUri(document.uri)[0];
     if (existing) {
       existing.panel.reveal(column);
       void existing.refresh(true); // Fetch remote comments on panel open
@@ -25,28 +48,29 @@ export class CommentPreviewPanel {
   }
 
   static refreshForUri(uri: vscode.Uri, forceRemote = false): void {
-    CommentPreviewPanel.panels.get(uri.toString())?.refresh(forceRemote);
+    for (const panelObj of CommentPreviewPanel.forUri(uri)) {
+      void panelObj.refresh(forceRemote);
+    }
   }
 
   static refreshAll(forceRemote = false): void {
-    for (const panelObj of CommentPreviewPanel.panels.values()) {
+    for (const panelObj of CommentPreviewPanel.panels) {
       void panelObj.refresh(forceRemote);
     }
   }
 
   static isOpenForUri(uri: vscode.Uri): boolean {
-    return CommentPreviewPanel.panels.has(uri.toString());
+    return CommentPreviewPanel.forUri(uri).length > 0;
   }
 
   static closeForUri(uri: vscode.Uri): void {
-    const p = CommentPreviewPanel.panels.get(uri.toString());
-    if (p) {
-      p.panel.dispose();
+    for (const panelObj of CommentPreviewPanel.forUri(uri)) {
+      panelObj.panel.dispose();
     }
   }
 
   static closeAll(): void {
-    for (const panelObj of CommentPreviewPanel.panels.values()) {
+    for (const panelObj of [...CommentPreviewPanel.panels]) {
       panelObj.panel.dispose();
     }
     CommentPreviewPanel.panels.clear();
@@ -54,7 +78,7 @@ export class CommentPreviewPanel {
 
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
-  private readonly mdUri: vscode.Uri;
+  private mdUri: vscode.Uri;
   private readonly disposables: vscode.Disposable[] = [];
   private isHtmlInitialized = false;
   private lastMarkdownContent = '';
@@ -64,14 +88,15 @@ export class CommentPreviewPanel {
   private constructor(
     extensionUri: vscode.Uri,
     document: vscode.TextDocument,
-    column?: vscode.ViewColumn
+    column?: vscode.ViewColumn,
+    initial: NavTarget = {}
   ) {
     this.extensionUri = extensionUri;
     this.mdUri = document.uri;
 
     this.panel = vscode.window.createWebviewPanel(
       VIEW_TYPE,
-      `Comments: ${vscode.workspace.asRelativePath(document.uri)}`,
+      titleFor(document.uri),
       column ?? vscode.ViewColumn.Beside,
       {
         enableScripts: true,
@@ -81,15 +106,21 @@ export class CommentPreviewPanel {
       }
     );
 
-    CommentPreviewPanel.panels.set(this.mdUri.toString(), this);
+    CommentPreviewPanel.panels.add(this);
 
     this.panel.webview.onDidReceiveMessage(
-      (msg: CommentActionMessage) => {
+      (msg: CommentActionMessage | NavMessage) => {
+        if (isNavMessage(msg)) {
+          void this.handleNavMessage(msg);
+          return;
+        }
         logDebug('CommentPreviewPanel webview message received:', msg);
+        // Bind the action to the file shown when it was sent, not when the queue reaches it.
+        const mdUri = this.mdUri;
         this.actionQueue = this.actionQueue
           .then(async () => {
             const isManualRefresh = msg.action === 'refresh';
-            const executed = await executeCommentAction(this.mdUri, msg);
+            const executed = await executeCommentAction(mdUri, msg);
             if (!executed) {
               logDebug('CommentPreviewPanel action cancelled or skipped:', msg.action);
               return;
@@ -138,7 +169,7 @@ export class CommentPreviewPanel {
     this.panel.onDidDispose(
       () => {
         logDebug('CommentPreviewPanel disposed for:', this.mdUri.toString());
-        CommentPreviewPanel.panels.delete(this.mdUri.toString());
+        CommentPreviewPanel.panels.delete(this);
         while (this.disposables.length) {
           this.disposables.pop()?.dispose();
         }
@@ -151,7 +182,7 @@ export class CommentPreviewPanel {
     try {
       const initialMd = document.getText();
       const initialHtml = renderMarkdownInitialLoading(initialMd, this.mdUri);
-      this.setHtml(initialHtml, initialMd);
+      this.setHtml(initialHtml, initialMd, initial);
     } catch (err) {
       logDebug('CommentPreviewPanel initial loading render fallback:', err);
     }
@@ -160,12 +191,16 @@ export class CommentPreviewPanel {
   }
 
   async refresh(forceRemote = false): Promise<void> {
+    const uri = this.mdUri;
     logDebug(
-      `CommentPreviewPanel.refresh invoked for ${this.mdUri.toString()}, forceRemote=${forceRemote}`
+      `CommentPreviewPanel.refresh invoked for ${uri.toString()}, forceRemote=${forceRemote}`
     );
-    const doc = await vscode.workspace.openTextDocument(this.mdUri);
+    const doc = await vscode.workspace.openTextDocument(uri);
     const markdownContent = doc.getText();
-    const bodyHtml = await renderMarkdownWithComments(markdownContent, this.mdUri, forceRemote);
+    const bodyHtml = await renderMarkdownWithComments(markdownContent, uri, forceRemote);
+    if (uri.toString() !== this.mdUri.toString()) {
+      return;
+    }
 
     if (this.isHtmlInitialized && this.lastMarkdownContent === markdownContent) {
       if (this.lastBodyHtml !== bodyHtml) {
@@ -184,7 +219,84 @@ export class CommentPreviewPanel {
     this.setHtml(bodyHtml, markdownContent);
   }
 
-  private setHtml(bodyHtml: string, markdownContent: string): void {
+  private async handleNavMessage(msg: NavMessage): Promise<void> {
+    if (msg.action === 'nav-open-link') {
+      await this.openLink(msg.href, !!msg.newPanel);
+    }
+  }
+
+  private async openLink(href: string, modifier: boolean): Promise<void> {
+    const root =
+      vscode.workspace.getWorkspaceFolder(this.mdUri)?.uri ?? vscode.Uri.joinPath(this.mdUri, '..');
+    const link = resolveLink(path.posix.relative(root.path, this.mdUri.path), href);
+    if (link.kind === 'invalid') {
+      void vscode.window.showWarningMessage(`Markdown Comments: ${link.reason}`);
+      return;
+    }
+    if (link.kind === 'external') {
+      await vscode.env.openExternal(vscode.Uri.parse(link.url));
+      return;
+    }
+    const target = vscode.Uri.joinPath(root, link.relPath);
+    if (!isMarkdownPath(link.relPath)) {
+      try {
+        await vscode.workspace.fs.stat(target);
+      } catch {
+        this.warnCannotOpen(target);
+        return;
+      }
+      await vscode.commands.executeCommand('vscode.open', target);
+      return;
+    }
+    const setting = vscode.workspace
+      .getConfiguration('mdComments')
+      .get<string>('openLinks', 'inPanel');
+    if (opensNewPanel(setting, modifier)) {
+      const doc = await this.openDocument(target);
+      if (doc) {
+        new CommentPreviewPanel(this.extensionUri, doc, vscode.ViewColumn.Beside, {
+          fragment: link.fragment,
+        });
+      }
+      return;
+    }
+    await this.showDocument(target, { fragment: link.fragment });
+  }
+
+  // Renders `uri` in this panel. Returns false, after warning, when it cannot be opened.
+  private async showDocument(uri: vscode.Uri, target: NavTarget): Promise<boolean> {
+    if (uri.toString() === this.mdUri.toString()) {
+      void this.panel.webview.postMessage({ type: 'navScrollTo', ...target });
+      return true;
+    }
+    const doc = await this.openDocument(uri);
+    if (!doc) {
+      return false;
+    }
+    this.mdUri = uri;
+    this.panel.title = titleFor(uri);
+    const markdown = doc.getText();
+    this.setHtml(renderMarkdownInitialLoading(markdown, uri), markdown, target);
+    void this.refresh(true);
+    return true;
+  }
+
+  private async openDocument(uri: vscode.Uri): Promise<vscode.TextDocument | undefined> {
+    try {
+      return await vscode.workspace.openTextDocument(uri);
+    } catch {
+      this.warnCannotOpen(uri);
+      return undefined;
+    }
+  }
+
+  private warnCannotOpen(uri: vscode.Uri): void {
+    void vscode.window.showWarningMessage(
+      `Markdown Comments: cannot open ${vscode.workspace.asRelativePath(uri)}`
+    );
+  }
+
+  private setHtml(bodyHtml: string, markdownContent: string, target: NavTarget = {}): void {
     this.lastMarkdownContent = markdownContent;
     this.lastBodyHtml = bodyHtml;
     this.isHtmlInitialized = true;
@@ -245,7 +357,7 @@ export class CommentPreviewPanel {
   <link rel="stylesheet" href="${navCssUri}">
   <style>body { margin: 0; padding: 0; }</style>
 </head>
-<body class="${themeClass}" data-md-webview="true" data-md-md-path="${escapeHtml(mdPath)}">
+<body class="${themeClass}" data-md-webview="true" data-md-md-path="${escapeHtml(mdPath)}" data-md-nav-fragment="${escapeHtml(target.fragment ?? '')}" data-md-nav-scroll="${target.scrollTop ?? ''}">
   ${bodyHtml}
   <script nonce="${nonce}" src="${anchorsScriptUri}"></script>
   <script nonce="${nonce}" src="${sidebarScriptUri}"></script>

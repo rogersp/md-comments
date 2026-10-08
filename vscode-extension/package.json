@@ -124,6 +124,19 @@
           "maximum": 600,
           "description": "Default width (px) of the comments side panel in Markdown preview"
         },
+        "mdComments.openLinks": {
+          "type": "string",
+          "enum": [
+            "inPanel",
+            "newPanel"
+          ],
+          "enumDescriptions": [
+            "A click follows a markdown link in the same comment preview; Cmd/Ctrl-click or middle-click opens it in a new one beside it.",
+            "A click opens a markdown link in a new comment preview beside the current one; Cmd/Ctrl-click or middle-click follows it in the same one."
+          ],
+          "default": "inPanel",
+          "description": "Where links to other markdown files open from the comment preview"
+        },
         "mdComments.reactionEmojis": {
           "type": "array",
           "items": {
