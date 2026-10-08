@@ -1,5 +1,6 @@
 (function () {
-  const vscode = acquireVsCodeApi();
+  const vscode =
+    window.__mdCommentsVsCodeApi || (window.__mdCommentsVsCodeApi = acquireVsCodeApi());
   let mdPath = document.body.getAttribute('data-md-md-path') || '';
   let reanchorCommentId = null;
   let anchorBlocks = null;

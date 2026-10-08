@@ -1,0 +1,21 @@
+/* Navigation for the standalone comment preview panel. */
+
+.md-comments-nav-target {
+  animation: md-comments-nav-flash 1.5s ease-out;
+}
+
+@keyframes md-comments-nav-flash {
+  from {
+    background-color: var(--gc-highlight);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-comments-nav-target {
+    animation: none;
+    outline: 2px solid var(--gc-highlight);
+  }
+}

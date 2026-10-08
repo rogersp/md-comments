@@ -213,6 +213,15 @@ export class CommentPreviewPanel {
     const scriptUri = this.panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'media', 'preview-webview.js')
     );
+    const navCssUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'navigation.css')
+    );
+    const navModelScriptUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'navModel.js')
+    );
+    const navigationScriptUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'navigation.js')
+    );
     const mdPath = this.mdUri.fsPath;
 
     const themeKind = vscode.window.activeColorTheme.kind;
@@ -233,6 +242,7 @@ export class CommentPreviewPanel {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${cssUri}">
   <link rel="stylesheet" href="${mdCssUri}">
+  <link rel="stylesheet" href="${navCssUri}">
   <style>body { margin: 0; padding: 0; }</style>
 </head>
 <body class="${themeClass}" data-md-webview="true" data-md-md-path="${escapeHtml(mdPath)}">
@@ -243,6 +253,8 @@ export class CommentPreviewPanel {
   <script nonce="${nonce}" src="${mentionScriptUri}"></script>
   <script nonce="${nonce}" src="${avatarScriptUri}"></script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${navModelScriptUri}"></script>
+  <script nonce="${nonce}" src="${navigationScriptUri}"></script>
 </body>
 </html>`;
   }
