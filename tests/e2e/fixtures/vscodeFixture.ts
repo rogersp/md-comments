@@ -24,9 +24,16 @@ export interface VSCodeTestContext {
   getCommentPreviewFrame: () => FrameLocator;
 }
 
-export const test = base.extend<{ vscode: VSCodeTestContext }>({
-  // eslint-disable-next-line no-empty-pattern
-  vscode: async ({}, use) => {
+export const test = base.extend<{
+  vscode: VSCodeTestContext;
+  workspaceFiles: Record<string, string>;
+  openDoc: string;
+}>({
+  // Extra files written into the generated workspace before VS Code starts.
+  workspaceFiles: [{}, { option: true }],
+  // The file VS Code opens at launch, relative to the generated workspace.
+  openDoc: ['test-guide.md', { option: true }],
+  vscode: async ({ workspaceFiles, openDoc }, use) => {
     const extensionPath = path.resolve(process.cwd(), 'vscode-extension');
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'vscode-e2e-'));
     const userDataDir = path.join(tempDir, 'user-data');
@@ -95,7 +102,7 @@ export const test = base.extend<{ vscode: VSCodeTestContext }>({
 
     const testDocPath = process.env.TEST_DOC_PATH
       ? path.resolve(workspaceDir, process.env.TEST_DOC_PATH)
-      : path.join(workspaceDir, isCustomWorkspace ? 'README.md' : 'test-guide.md');
+      : path.join(workspaceDir, isCustomWorkspace ? 'README.md' : openDoc);
 
     if (!isCustomWorkspace) {
       const sampleMarkdown = [
@@ -109,6 +116,11 @@ export const test = base.extend<{ vscode: VSCodeTestContext }>({
         '',
       ].join('\n');
       await fs.writeFile(testDocPath, sampleMarkdown, 'utf8');
+      for (const [relPath, content] of Object.entries(workspaceFiles)) {
+        const filePath = path.join(workspaceDir, relPath);
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, content, 'utf8');
+      }
 
       try {
         execSync('git init -b main', { cwd: workspaceDir, stdio: 'ignore' });
