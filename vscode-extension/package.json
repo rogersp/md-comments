@@ -1,8 +1,8 @@
 {
   "name": "md-preview-comments",
-  "displayName": "Markdown Preview Comments",
+  "displayName": "Markdown Preview Comments (fork)",
   "description": "AI-orchestrated docs & human-orchestrated comments on rendered views. Powered by GitHub custom git refs (refs/md-comments/data). Works in VS Code, Cursor, and Antigravity.",
-  "version": "1.4.8",
+  "version": "1.5.0",
   "publisher": "md-comments",
   "license": "MIT",
   "icon": "icon.png",
