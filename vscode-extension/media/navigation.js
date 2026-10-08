@@ -1,9 +1,10 @@
-/* Link routing for the standalone comment preview panel. */
+/* Link routing, navigation bar and back/forward for the standalone comment preview panel. */
 (function () {
   const model = window.mdCommentsNavModel;
   const vscode = window.__mdCommentsVsCodeApi;
   const docEl = document.querySelector('.md-comments-document');
-  if (!model || !vscode || !docEl) {
+  const main = document.querySelector('.md-comments-main');
+  if (!model || !vscode || !docEl || !main) {
     return;
   }
 
@@ -15,13 +16,35 @@
     return Math.round(window.scrollY);
   }
 
+  function makeNavButton(nav, label, text) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'md-comments-nav-btn';
+    btn.setAttribute('data-nav', nav);
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    btn.textContent = text;
+    btn.disabled = true;
+    return btn;
+  }
+
+  const navbar = document.createElement('div');
+  navbar.id = 'md-comments-navbar';
+  navbar.className = 'md-comments-navbar';
+  const backBtn = makeNavButton('back', 'Back', '←');
+  const forwardBtn = makeNavButton('forward', 'Forward', '→');
+  const title = document.createElement('span');
+  title.className = 'md-comments-nav-title';
+  title.textContent = document.body.getAttribute('data-md-nav-title') || '';
+  navbar.append(backBtn, forwardBtn, title);
+  main.insertBefore(navbar, main.firstChild);
+
   function findTarget(id) {
     return document.getElementById(id) || document.getElementsByName(id)[0] || null;
   }
 
   function alignTo(el) {
-    const bar = document.getElementById('md-comments-navbar');
-    const offset = (bar ? bar.offsetHeight : 0) + 8;
+    const offset = navbar.offsetHeight + 8;
     window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - offset);
   }
 
@@ -64,11 +87,13 @@
     }, 1500);
   }
 
+  // Records where the reader was, so Back returns there, then jumps.
   function jumpTo(id) {
     const el = findTarget(id);
     if (!el) {
       return false;
     }
+    post('nav-push', { scrollTop: currentScrollTop() });
     scrollToElement(el);
     return true;
   }
@@ -80,6 +105,10 @@
     } else if (typeof scrollTop === 'number' && !isNaN(scrollTop)) {
       window.scrollTo(0, scrollTop);
     }
+  }
+
+  function navigate(direction) {
+    post(direction === 'back' ? 'nav-back' : 'nav-forward', { scrollTop: currentScrollTop() });
   }
 
   function linkFromEvent(e) {
@@ -113,6 +142,13 @@
     }
   }
 
+  backBtn.addEventListener('click', function () {
+    navigate('back');
+  });
+  forwardBtn.addEventListener('click', function () {
+    navigate('forward');
+  });
+
   document.addEventListener('click', function (e) {
     if (e.button === 0) {
       followLink(e, e.metaKey || e.ctrlKey);
@@ -123,11 +159,36 @@
       followLink(e, true);
     }
   });
+  // Mouse side buttons arrive as buttons 3/4. VS Code's own handler for them listens on the
+  // workbench document, which never sees events inside a webview, so the panel handles them.
+  // Act on mousedown, as VS Code does, and swallow the rest of the gesture so the browser never
+  // runs its own history navigation.
+  document.addEventListener('mousedown', function (e) {
+    if (e.button === 3 || e.button === 4) {
+      e.preventDefault();
+      navigate(e.button === 3 ? 'back' : 'forward');
+    }
+  });
+  ['mouseup', 'auxclick'].forEach(function (type) {
+    document.addEventListener(type, function (e) {
+      if (e.button === 3 || e.button === 4) {
+        e.preventDefault();
+      }
+    });
+  });
 
   window.addEventListener('message', function (event) {
     const msg = event.data;
-    if (msg && msg.type === 'navScrollTo') {
+    if (!msg) {
+      return;
+    }
+    if (msg.type === 'navScrollTo') {
       applyTarget(msg.fragment || '', msg.scrollTop);
+    } else if (msg.type === 'navState') {
+      backBtn.disabled = !msg.canGoBack;
+      forwardBtn.disabled = !msg.canGoForward;
+    } else if (msg.type === 'navRequest') {
+      navigate(msg.direction);
     }
   });
 
@@ -138,4 +199,6 @@
   requestAnimationFrame(function () {
     applyTarget(initialFragment, initialScroll ? Number(initialScroll) : NaN);
   });
+  // The document was just rebuilt, so ask the host for the back/forward state.
+  post('nav-ready');
 })();

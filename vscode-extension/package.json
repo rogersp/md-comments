@@ -76,9 +76,27 @@
           "light": "./media/icons/comment-preview-light.svg",
           "dark": "./media/icons/comment-preview-dark.svg"
         }
+      },
+      {
+        "command": "mdComments.navigateBack",
+        "title": "Markdown Comments: Go Back"
+      },
+      {
+        "command": "mdComments.navigateForward",
+        "title": "Markdown Comments: Go Forward"
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "mdComments.navigateBack",
+          "when": "activeWebviewPanelId == 'mdComments.commentPreview'"
+        },
+        {
+          "command": "mdComments.navigateForward",
+          "when": "activeWebviewPanelId == 'mdComments.commentPreview'"
+        }
+      ],
       "editor/title": [
         {
           "command": "mdComments.toggleCommentPreview",
@@ -101,6 +119,20 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "mdComments.navigateBack",
+        "key": "alt+left",
+        "mac": "ctrl+-",
+        "when": "activeWebviewPanelId == 'mdComments.commentPreview'"
+      },
+      {
+        "command": "mdComments.navigateForward",
+        "key": "alt+right",
+        "mac": "ctrl+shift+-",
+        "when": "activeWebviewPanelId == 'mdComments.commentPreview'"
+      }
+    ],
     "configuration": {
       "title": "Markdown Comments",
       "properties": {

@@ -5,6 +5,7 @@ import { renderMarkdownWithComments, renderMarkdownInitialLoading } from './mark
 import { escapeHtml } from '../../shared/html';
 import { logDebug, logError } from './logger';
 import { isMarkdownPath, opensNewPanel, resolveLink } from './links';
+import { NavHistory, type NavLocation } from './navHistory';
 
 const VIEW_TYPE = 'mdComments.commentPreview';
 
@@ -15,7 +16,12 @@ export interface NavTarget {
 }
 
 /** Messages from navigation.js. They bypass the comment action queue. */
-type NavMessage = { action: 'nav-open-link'; href: string; newPanel?: boolean; scrollTop?: number };
+type NavMessage =
+  | { action: 'nav-ready' }
+  | { action: 'nav-push'; scrollTop?: number }
+  | { action: 'nav-open-link'; href: string; newPanel?: boolean; scrollTop?: number }
+  | { action: 'nav-back'; scrollTop?: number }
+  | { action: 'nav-forward'; scrollTop?: number };
 
 function isNavMessage(msg: CommentActionMessage | NavMessage): msg is NavMessage {
   return typeof msg?.action === 'string' && msg.action.startsWith('nav-');
@@ -76,6 +82,13 @@ export class CommentPreviewPanel {
     CommentPreviewPanel.panels.clear();
   }
 
+  private static active: CommentPreviewPanel | undefined;
+
+  // The webview reports its scroll position with the request, so the round trip starts there.
+  static navigateActive(direction: 'back' | 'forward'): void {
+    void CommentPreviewPanel.active?.panel.webview.postMessage({ type: 'navRequest', direction });
+  }
+
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
   private mdUri: vscode.Uri;
@@ -84,6 +97,8 @@ export class CommentPreviewPanel {
   private lastMarkdownContent = '';
   private lastBodyHtml = '';
   private actionQueue: Promise<void> = Promise.resolve();
+  private readonly history = new NavHistory();
+  private navigating = false;
 
   private constructor(
     extensionUri: vscode.Uri,
@@ -102,6 +117,7 @@ export class CommentPreviewPanel {
     );
 
     CommentPreviewPanel.panels.add(this);
+    CommentPreviewPanel.active = this;
 
     this.panel.webview.onDidReceiveMessage(
       (msg: CommentActionMessage | NavMessage) => {
@@ -144,6 +160,9 @@ export class CommentPreviewPanel {
 
     this.panel.onDidChangeViewState(
       (e) => {
+        if (e.webviewPanel.active) {
+          CommentPreviewPanel.active = this;
+        }
         if (e.webviewPanel.visible) {
           logDebug(`CommentPreviewPanel became visible for ${this.mdUri.toString()}`);
           void this.refresh(false);
@@ -165,6 +184,9 @@ export class CommentPreviewPanel {
       () => {
         logDebug('CommentPreviewPanel disposed for:', this.mdUri.toString());
         CommentPreviewPanel.panels.delete(this);
+        if (CommentPreviewPanel.active === this) {
+          CommentPreviewPanel.active = undefined;
+        }
         while (this.disposables.length) {
           this.disposables.pop()?.dispose();
         }
@@ -215,12 +237,63 @@ export class CommentPreviewPanel {
   }
 
   private async handleNavMessage(msg: NavMessage): Promise<void> {
-    if (msg.action === 'nav-open-link') {
-      await this.openLink(msg.href, !!msg.newPanel);
+    if (msg.action === 'nav-ready') {
+      this.postNavState();
+      return;
+    }
+    // A navigation that arrives while another is loading is dropped, not queued.
+    if (this.navigating) {
+      return;
+    }
+    this.navigating = true;
+    try {
+      switch (msg.action) {
+        case 'nav-push':
+          this.history.push(this.here(msg.scrollTop));
+          break;
+        case 'nav-open-link':
+          await this.openLink(msg.href, !!msg.newPanel, msg.scrollTop);
+          break;
+        case 'nav-back': {
+          const target = this.history.peekBack();
+          const from = this.here(msg.scrollTop);
+          if (target && (await this.goTo(target))) {
+            this.history.commitBack(from);
+          }
+          break;
+        }
+        case 'nav-forward': {
+          const target = this.history.peekForward();
+          const from = this.here(msg.scrollTop);
+          if (target && (await this.goTo(target))) {
+            this.history.commitForward(from);
+          }
+          break;
+        }
+      }
+    } finally {
+      this.navigating = false;
+      this.postNavState();
     }
   }
 
-  private async openLink(href: string, modifier: boolean): Promise<void> {
+  private here(scrollTop: number | undefined): NavLocation {
+    return { uri: this.mdUri.toString(), scrollTop: scrollTop ?? 0 };
+  }
+
+  private goTo(location: NavLocation): Promise<boolean> {
+    return this.showDocument(vscode.Uri.parse(location.uri), { scrollTop: location.scrollTop });
+  }
+
+  private postNavState(): void {
+    void this.panel.webview.postMessage({
+      type: 'navState',
+      canGoBack: this.history.canGoBack,
+      canGoForward: this.history.canGoForward,
+    });
+  }
+
+  private async openLink(href: string, modifier: boolean, scrollTop?: number): Promise<void> {
     const root =
       vscode.workspace.getWorkspaceFolder(this.mdUri)?.uri ?? vscode.Uri.joinPath(this.mdUri, '..');
     const link = resolveLink(path.posix.relative(root.path, this.mdUri.path), href);
@@ -255,7 +328,10 @@ export class CommentPreviewPanel {
       }
       return;
     }
-    await this.showDocument(target, { fragment: link.fragment });
+    const from = this.here(scrollTop);
+    if (await this.showDocument(target, { fragment: link.fragment })) {
+      this.history.push(from);
+    }
   }
 
   // Renders `uri` in this panel. Returns false, after warning, when it cannot be opened.
@@ -368,7 +444,7 @@ export class CommentPreviewPanel {
   <link rel="stylesheet" href="${navCssUri}">
   <style>body { margin: 0; padding: 0; }</style>
 </head>
-<body class="${themeClass}" data-md-webview="true" data-md-md-path="${escapeHtml(mdPath)}" data-md-nav-fragment="${escapeHtml(target.fragment ?? '')}" data-md-nav-scroll="${target.scrollTop ?? ''}">
+<body class="${themeClass}" data-md-webview="true" data-md-md-path="${escapeHtml(mdPath)}" data-md-nav-title="${escapeHtml(vscode.workspace.asRelativePath(this.mdUri))}" data-md-nav-fragment="${escapeHtml(target.fragment ?? '')}" data-md-nav-scroll="${target.scrollTop ?? ''}">
   ${bodyHtml}
   <script nonce="${nonce}" src="${anchorsScriptUri}"></script>
   <script nonce="${nonce}" src="${sidebarScriptUri}"></script>

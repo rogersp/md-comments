@@ -12,6 +12,8 @@ dependsOn:
 implementedIn:
   - 'vscode-extension/src/headingIds.ts'
   - 'vscode-extension/src/links.ts'
+  - 'vscode-extension/src/navHistory.ts'
+  - 'vscode-extension/src/extension.ts'
   - 'vscode-extension/src/commentPreviewPanel.ts'
   - 'vscode-extension/media/navModel.js'
   - 'vscode-extension/media/navigation.js'
@@ -20,6 +22,7 @@ verifiedIn:
   - 'tests/vscode-heading-ids.test.ts'
   - 'tests/vscode-links.test.ts'
   - 'tests/vscode-nav-model.test.ts'
+  - 'tests/vscode-nav-history.test.ts'
   - 'tests/e2e/vscode-link-navigation.spec.ts'
 invariants:
   - 'INV-XSS-SANITIZED'
@@ -41,3 +44,7 @@ Links in the standalone comment preview behave as they do on GitHub. Headings ca
 - Then the same panel shows that file, scrolled to the linked section
 - When the user Cmd/Ctrl-clicks the same link
 - Then a second comment preview opens beside the first on the linked file
+- When the user presses Back (the ← button, Alt+← or Ctrl+- on macOS)
+- Then the panel returns to the previous file and scroll position
+- When the user presses the mouse back or forward side button over the panel
+- Then the panel navigates the same way, and VS Code's editor history does not move

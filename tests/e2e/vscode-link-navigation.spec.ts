@@ -1,5 +1,11 @@
 import { test, expect } from './fixtures/vscodeFixture';
-import { byId, navigationWorkspace, openNavigationPreview } from './fixtures/navigationHelpers';
+import {
+  byId,
+  navigationWorkspace,
+  openNavigationPreview,
+  pressMouseSideButton,
+  scrollY,
+} from './fixtures/navigationHelpers';
 
 test.use(navigationWorkspace);
 
@@ -62,6 +68,61 @@ test.describe('Comment preview link navigation', () => {
     await frame.getByRole('link', { name: 'Missing file' }).click();
     await expect(vscode.page.locator('.notifications-toasts')).toContainText(
       'cannot open missing.md'
+    );
+  });
+
+  test('Back returns from a heading jump and Forward repeats it', async ({ vscode }) => {
+    const frame = await openNavigationPreview(vscode);
+    const back = frame.locator('#md-comments-navbar [data-nav="back"]');
+    const forward = frame.locator('#md-comments-navbar [data-nav="forward"]');
+    await expect(back).toBeDisabled();
+    await frame.getByRole('link', { name: 'Numbered section' }).click();
+    await expect(byId(frame, '510-sender-identities-and-signatures')).toBeInViewport();
+    await expect(back).toBeEnabled();
+    await back.click();
+    await expect.poll(() => scrollY(frame)).toBe(0);
+    await expect(forward).toBeEnabled();
+    await forward.click();
+    await expect(byId(frame, '510-sender-identities-and-signatures')).toBeInViewport();
+  });
+
+  test('Back returns across files to the same scroll position', async ({ vscode }) => {
+    const frame = await openNavigationPreview(vscode);
+    const link = frame.getByRole('link', { name: 'the second scenario' });
+    await link.scrollIntoViewIfNeeded();
+    const before = await scrollY(frame);
+    expect(before).toBeGreaterThan(0);
+    await link.click();
+    await expect(frame.locator('.md-comments-document h1')).toHaveText('Other fixture');
+    await expect(frame.locator('.md-comments-nav-title')).toHaveText('other.md');
+    await frame.locator('#md-comments-navbar [data-nav="back"]').click();
+    await expect(frame.locator('.md-comments-document h1')).toHaveText('Navigation fixture');
+    await expect.poll(async () => Math.abs((await scrollY(frame)) - before)).toBeLessThan(5);
+  });
+
+  test('the keyboard shortcut goes back', async ({ vscode }) => {
+    const frame = await openNavigationPreview(vscode);
+    await frame.getByRole('link', { name: 'Top of other file' }).click();
+    await expect(frame.locator('.md-comments-document h1')).toHaveText('Other fixture');
+    await frame.locator('.md-comments-nav-title').click();
+    await vscode.page.keyboard.press(
+      process.platform === 'darwin' ? 'Control+Minus' : 'Alt+ArrowLeft'
+    );
+    await expect(frame.locator('.md-comments-document h1')).toHaveText('Navigation fixture');
+  });
+
+  test('the mouse back and forward buttons navigate the panel', async ({ vscode }) => {
+    const frame = await openNavigationPreview(vscode);
+    await frame.getByRole('link', { name: 'Top of other file' }).click();
+    await expect(frame.locator('.md-comments-document h1')).toHaveText('Other fixture');
+    await pressMouseSideButton(vscode.page, 'back');
+    await expect(frame.locator('.md-comments-document h1')).toHaveText('Navigation fixture');
+    await pressMouseSideButton(vscode.page, 'forward');
+    await expect(frame.locator('.md-comments-document h1')).toHaveText('Other fixture');
+    // VS Code's own editor history must not have moved: the panel is still the active tab.
+    // Every editor group has a `.tab.active`, so scope to the active group.
+    await expect(vscode.page.locator('.editor-group-container.active .tab.active')).toContainText(
+      'Comments: other.md'
     );
   });
 });

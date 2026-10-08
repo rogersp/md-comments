@@ -513,6 +513,12 @@ export function activate(context: vscode.ExtensionContext): {
       }
     ),
     vscode.commands.registerCommand('mdComments.refreshPreview', () => refreshPreview(true)),
+    vscode.commands.registerCommand('mdComments.navigateBack', () =>
+      CommentPreviewPanel.navigateActive('back')
+    ),
+    vscode.commands.registerCommand('mdComments.navigateForward', () =>
+      CommentPreviewPanel.navigateActive('forward')
+    ),
     vscode.commands.registerCommand('mdComments.scanOrphans', async () => {
       const editor = vscode.window.activeTextEditor;
       logInfo('Command mdComments.scanOrphans invoked');

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, type FrameLocator, type Locator } from '@playwright/test';
+import { expect, type FrameLocator, type Locator, type Page } from '@playwright/test';
 import type { VSCodeTestContext } from './vscodeFixture';
 
 const fixtureDir = path.resolve(process.cwd(), 'tests/fixtures/navigation');
@@ -36,4 +36,35 @@ export function byId(frame: FrameLocator, id: string): Locator {
 
 export function scrollY(frame: FrameLocator): Promise<number> {
   return frame.locator('body').evaluate(() => Math.round(window.scrollY));
+}
+
+// Playwright's mouse API has no side buttons. The DevTools protocol does, and it feeds
+// Chromium's normal input path, so the webview sees what a real mouse sends.
+export async function pressMouseSideButton(page: Page, button: 'back' | 'forward'): Promise<void> {
+  const box = await page.locator('iframe.webview').boundingBox();
+  if (!box) {
+    throw new Error('comment preview webview is not visible');
+  }
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  const buttons = button === 'back' ? 8 : 16;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x,
+    y,
+    button,
+    buttons,
+    clickCount: 1,
+  });
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x,
+    y,
+    button,
+    buttons: 0,
+    clickCount: 1,
+  });
+  await cdp.detach();
 }
