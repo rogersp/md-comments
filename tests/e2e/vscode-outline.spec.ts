@@ -42,7 +42,48 @@ test.describe('Comment preview outline', () => {
     await expect(frame.locator('.md-comments-outline-item.is-active')).toHaveText(
       /5\.10 Sender identities/
     );
+    await expect(frame.locator('.md-comments-outline-link[aria-current="location"]')).toHaveText(
+      /5\.10 Sender identities/
+    );
+    await expect(frame.locator('.md-comments-outline-link[aria-current]')).toHaveCount(1);
     await expect(frame.locator('#md-comments-navbar [data-nav="back"]')).toBeEnabled();
+  });
+
+  test('keeps its list in place when the sidebar changes without new counts', async ({
+    vscode,
+  }) => {
+    const frame = await openNavigationPreview(vscode);
+    await openOutline(frame);
+    await frame.locator('.md-comments-outline-depth').selectOption('6');
+    // Let the initial comment load settle so only the mutation below reaches the outline.
+    await vscode.page.waitForTimeout(1000);
+    // Put an early entry in the active state, so a rebuild would scroll the list back to it.
+    await frame.locator('body').evaluate(() => window.scrollTo(0, 200));
+    await expect(frame.locator('.md-comments-outline-item.is-active')).toHaveCount(1);
+    const scrolled = await frame
+      .locator('#md-comments-outline .md-comments-outline-list')
+      .evaluate((list) => {
+        // Eight entries fit the panel, so shrink the list until it scrolls.
+        (list as HTMLElement).style.flex = 'none';
+        (list as HTMLElement).style.height = '60px';
+        list.scrollTop = list.scrollHeight;
+        (window as any).__lastEntry = list.lastElementChild;
+        return list.scrollTop;
+      });
+    expect(scrolled).toBeGreaterThan(0);
+    const after = await frame.locator('body').evaluate(async () => {
+      const sidebar = document.getElementById('md-comments-sidebar')!;
+      const probe = document.createElement('span');
+      sidebar.appendChild(probe);
+      probe.remove();
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      const list = document.querySelector('#md-comments-outline .md-comments-outline-list')!;
+      return {
+        scrollTop: list.scrollTop,
+        sameEntry: (window as any).__lastEntry.isConnected,
+      };
+    });
+    expect(after).toEqual({ scrollTop: scrolled, sameEntry: true });
   });
 
   test('the o key toggles the outline', async ({ vscode }) => {

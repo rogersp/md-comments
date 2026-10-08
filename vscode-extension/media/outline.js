@@ -86,16 +86,23 @@
     return model.activeHeadingIndex(tops, window.scrollY, navbar.offsetHeight + 16);
   }
 
-  function highlightActive() {
+  // Only the scroll handler and opening the drawer move the list, so a rebuild or a filter
+  // change leaves the reader's place in it alone.
+  function highlightActive(reveal) {
     const previous = list.querySelector('.is-active');
     if (previous) {
       previous.classList.remove('is-active');
+      previous.firstChild.removeAttribute('aria-current');
     }
     const li = list.querySelector('[data-index="' + activeIndex() + '"]');
     if (!li) {
       return;
     }
     li.classList.add('is-active');
+    li.firstChild.setAttribute('aria-current', 'location');
+    if (!reveal) {
+      return;
+    }
     // Keep the active entry visible without scrolling the document itself.
     const top = li.offsetTop;
     const bottom = top + li.offsetHeight;
@@ -104,6 +111,23 @@
     } else if (bottom > list.scrollTop + list.clientHeight) {
       list.scrollTop = bottom - list.clientHeight;
     }
+  }
+
+  function renderCount(btn, item) {
+    let count = btn.querySelector('.md-comments-outline-count');
+    if (item.openThreads === 0) {
+      if (count) {
+        count.remove();
+      }
+      return;
+    }
+    if (!count) {
+      count = document.createElement('span');
+      count.className = 'md-comments-outline-count';
+      btn.appendChild(count);
+    }
+    count.textContent = String(item.openThreads);
+    count.title = item.openThreads + (item.openThreads === 1 ? ' open thread' : ' open threads');
   }
 
   function render() {
@@ -122,14 +146,7 @@
       label.className = 'md-comments-outline-text';
       label.textContent = item.text;
       btn.appendChild(label);
-      if (item.openThreads > 0) {
-        const count = document.createElement('span');
-        count.className = 'md-comments-outline-count';
-        count.textContent = String(item.openThreads);
-        count.title =
-          item.openThreads + (item.openThreads === 1 ? ' open thread' : ' open threads');
-        btn.appendChild(count);
-      }
+      renderCount(btn, item);
       btn.addEventListener('click', function () {
         if (window.mdCommentsNav) {
           window.mdCommentsNav.jumpTo(item.id);
@@ -138,7 +155,7 @@
       li.appendChild(btn);
       list.appendChild(li);
     });
-    highlightActive();
+    highlightActive(false);
   }
 
   function anchorElementFor(card) {
@@ -189,10 +206,18 @@
       }),
       sections
     );
+    // Sidebar refreshes rewrite the cards even when nothing changed, so touch only real changes,
+    // and update the badges in place to keep the list's scroll position and focus.
     items.forEach(function (item, i) {
+      if (item.openThreads === counts[i]) {
+        return;
+      }
       item.openThreads = counts[i];
+      const li = list.querySelector('[data-index="' + i + '"]');
+      if (li) {
+        renderCount(li.firstChild, item);
+      }
     });
-    render();
   }
 
   function setOpen(value) {
@@ -201,7 +226,7 @@
     toggle.setAttribute('aria-pressed', String(open));
     saveState();
     if (open) {
-      highlightActive();
+      highlightActive(true);
     }
   }
 
@@ -237,13 +262,13 @@
   window.addEventListener(
     'scroll',
     function () {
-      if (scrollPending) {
+      if (scrollPending || !open) {
         return;
       }
       scrollPending = true;
       requestAnimationFrame(function () {
         scrollPending = false;
-        highlightActive();
+        highlightActive(true);
       });
     },
     { passive: true }
@@ -259,6 +284,7 @@
     }).observe(sidebar, { childList: true, subtree: true });
   }
 
-  setOpen(open);
+  render();
   updateCounts();
+  setOpen(open);
 })();
