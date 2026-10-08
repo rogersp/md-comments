@@ -21,6 +21,11 @@ export async function openNavigationPreview(vscode: VSCodeTestContext): Promise<
   await expect(frame.locator('.md-comments-document h1')).toHaveText('Navigation fixture', {
     timeout: 20000,
   });
+  // The h1 exists once the parser reaches it, before the scripts at the end of <body> have run.
+  // A click in that window goes to VS Code's own link handler instead of navigation.js.
+  await expect
+    .poll(() => frame.locator('body').evaluate(() => !!(window as any).mdCommentsNav))
+    .toBe(true);
   return frame;
 }
 
